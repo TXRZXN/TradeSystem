@@ -1,0 +1,149 @@
+// Author: TXRZXN
+// Contact: naruechat.b@gmail.com
+//@version=5
+strategy(title="RSI Crossover Strategy",overlay = true,precision = 6 ,initial_capital = 1000, commission_value = 0.2)
+
+ShowSig = input(true,title = "Show Signal",group = "Indicator Setting")
+showRsi = input(true,title = "Show Rsi",group = "Indicator Setting")
+showMa = input(true,title = "Show MA Line",group = "Indicator Setting")
+rsibuy  = input.int(66, minval=1, title="RSI Buy",group = "Indicator Setting")
+rsisell  = input.int(43, minval=1, title="RSI Sell",group = "Indicator Setting")
+rsiLengthInput = input.int(14, minval=1, title="RSI Length",group = "Indicator Setting")
+rsiSourceInput = input.source(close, "Source",group = "Indicator Setting" )
+maTypeInput = input.string("SMA", title="MA Type", options=["SMA",  "EMA"],group = "Indicator Setting")
+maLengthInput = input.int(14, title="MA Length",group = "Indicator Setting")
+
+Buysig = input(defval=false, title='Start Strategy',group = "Strategy Setting")
+UseSl = input(defval=false, title='Use Stoploss Price',group = "Strategy Setting")
+slType = input.string(title = "Stop Loss Type", defval = "SD", options = ["Low", "Trailing","SD"], display = display.data_window,group = "Strategy Setting")
+Risk_Per_Trade = input(5, '% of Risk Per Trade',group = "Strategy Setting") / 100  // Risk% Per Trade Switch
+SLDAY = input(title='Stop Lose Bars', defval=10,group = "Strategy Setting")
+Mul = input(title='Mul ATR', defval=2.3,group = "Strategy Setting")
+
+Compound = true
+
+use_date_range = input(true,title =  "Use Date Range",group = "BackTest Setting")
+
+
+up = ta.rma(math.max(ta.change(rsiSourceInput), 0), rsiLengthInput)
+down = ta.rma(-math.min(ta.change(rsiSourceInput), 0), rsiLengthInput)
+rsi = down == 0 ? 100 : up == 0 ? 0 : 100 - (100 / (1 + up / down))
+rsiMA = maTypeInput=="SMA" ? ta.sma(rsi,maLengthInput) : ta.ema(rsi,maLengthInput)
+
+plot(showRsi ? rsi : na , "RSI", color=#7E57C2)
+plot(showMa ? rsiMA : na , "RSI-based MA", color=color.yellow)
+
+
+Bull = ta.crossover(rsi,rsibuy)
+Bear = ta.crossunder(rsi,rsisell)
+
+Green = Bull   // Buy
+Red = Bear // Sell
+
+buycond = Green and Green[1] == 0
+sellcond = Red and Red[1] == 0
+
+bullish = ta.barssince(buycond) < ta.barssince(sellcond)
+bearish = ta.barssince(sellcond) < ta.barssince(buycond)
+
+buy = bearish[1] and buycond
+sell = bullish[1] and sellcond
+plotshape( ShowSig ? buy : na, style=shape.labelup, text='Buy Next Bar', textcolor=color.new(color.black, 0), location=location.belowbar, color=color.new(color.green, 0))
+plotshape( ShowSig ? sell : na, style=shape.labeldown, text='Sell Next Bar', textcolor=color.new(color.black, 0), location=location.abovebar, color=color.new(color.red, 0))
+
+
+// === BACKTEST RANGE === //
+FromYear = input.int(defval=2000, title='From Year', minval=1950,group = "BackTest Setting")
+FromMonth = input.int(defval=1, title='From Month', minval=1,group = "BackTest Setting")
+FromDay = input.int(defval=1, title='From Day', minval=1,group = "BackTest Setting")
+ToYear = input.int(defval=9999, title='To Year', minval=1950,group = "BackTest Setting")
+ToMonth = input.int(defval=1, title='To Month', minval=1,group = "BackTest Setting")
+ToDay = input.int(defval=1, title='To Day', minval=1,group = "BackTest Setting")
+in_date_range = use_date_range ? time > timestamp(FromYear, FromMonth, FromDay, 00, 00) and time < timestamp(ToYear, ToMonth, ToDay, 23, 59) : true
+
+//****************************************************************************//
+
+//////////////////////////////////////////////
+//    define strategy entry / exit          //
+//////////////////////////////////////////////
+
+//****************************************************************************//
+// LONG CONDITIONS
+
+Select_Long_Condition_1 = Bull   // Buy when Have Signal
+Open_Long_Condition = Select_Long_Condition_1 and strategy.opentrades == 0
+
+//****************************************************************************//
+// STOP LOSS Price
+
+ATR = ta.atr(SLDAY)
+Stop = Mul*ATR
+
+var ATRTrailingStop = 0.0
+ATRTrailingStop := if close>ATRTrailingStop[1] and close[1]>ATRTrailingStop[1]
+    math.max(ATRTrailingStop[1], close-Stop)
+else if close<ATRTrailingStop[1] and close[1]<ATRTrailingStop[1]
+    math.min(ATRTrailingStop[1], close+Stop)
+else if close>ATRTrailingStop[1]
+    close-Stop 
+else 
+    close+Stop
+
+
+SD = ta.stdev(close,SLDAY)
+sdtrail = SD*Mul
+SlSd = close - sdtrail
+
+SlAtr =  slType == "Trailing" ? math.min(ATRTrailingStop, close-Stop) : slType == "SD" ? SlSd :ta.lowest(SLDAY)
+
+float longSL = na
+longSL := Open_Long_Condition ?  SlAtr : longSL[1]  
+plot(longSL)
+
+
+
+//****************************************************************************//
+// Cal StopLoss
+
+Long_Entry_Price = close
+Diff_OPEN_to_SL = math.abs(Long_Entry_Price - longSL)
+
+// Exit CONDITIONS
+
+Exit_Long_Condition = Red and Red[1] == 0  // Sell when Have Signal
+
+//****************************************************************************//
+// POSITION SIZE CAP
+
+float portSize = Compound ? strategy.netprofit + strategy.initial_capital : strategy.initial_capital
+float LossAmoutUnit = portSize * Risk_Per_Trade
+float PercentSL = ( Diff_OPEN_to_SL / Long_Entry_Price ) * 100
+float PositionSize = LossAmoutUnit / Diff_OPEN_to_SL
+
+
+//****************************************************************************//
+// ENTRY/EXIT
+
+if Buysig
+    if Open_Long_Condition and in_date_range and Bull
+        strategy.entry('LONG', strategy.long, qty=PositionSize)
+
+
+if Exit_Long_Condition and in_date_range
+    strategy.close('LONG')
+
+if close < longSL and UseSl
+    strategy.close('LONG')
+
+if use_date_range and not in_date_range
+    strategy.close('LONG')
+
+//****************************************************************************//
+// PLOT STOP LOSS
+
+longPlotSL = strategy.opentrades > 0 and strategy.position_size > 0 ? longSL : na
+var test2 = longPlotSL[0]
+plot(longPlotSL, title="", linewidth=2, style=plot.style_linebr, color=color.new(color.red, 0))
+
+//****************************************************************************//
+

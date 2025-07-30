@@ -1,0 +1,62 @@
+// Author: TXRZXN
+// Contact: naruechat.b@gmail.com
+indicator("Candle Body Percentile", overlay = false)
+
+// รับ input จากผู้ใช้
+lookback = input.int(50, minval=1, title="จำนวนแท่งย้อนหลัง")
+BigBody = input.int(defval = 80,maxval=100,minval=1,title = "Top Percentile")/100
+SmallBody = input.int(defval = 20,maxval=100,minval=1,title = "Bottim Percentile")/100
+
+// สร้างตัวแปรสำหรับนับแท่งเขียวและแดง
+greenCount = 0
+redCount = 0
+bigGreenCount = 0
+bigRedCount = 0
+smallGreenCount = 0
+smallRedCount = 0
+
+isRedCandle = close < open
+isGreenCandle = close > open
+body = math.abs(close - open)
+
+var float[] bodies = array.new_float()
+
+// Update array
+if bar_index > lookback
+    array.shift(bodies)
+array.push(bodies, body)
+
+// Function sort array (Pine v5 support array.sort)
+sortedBodies = array.copy(bodies)
+array.sort(sortedBodies, order.ascending)
+
+bigPercentileIndex = math.floor(lookback *BigBody)
+smallPercentileIndex = math.floor(lookback *SmallBody)
+
+var float body80 = na
+var float body20 = na 
+if array.size(sortedBodies) > bigPercentileIndex
+    body80 := array.get(sortedBodies, bigPercentileIndex)
+
+if array.size(sortedBodies) > smallPercentileIndex  
+    body20 := array.get(sortedBodies, smallPercentileIndex)
+
+isBigCandle =  body > body80
+isSmallCandle = body < body20
+isBigGreen = body > body80 and isGreenCandle
+isBigRed =body > body80 and isRedCandle
+isSmallGreen = body < body20 and isGreenCandle
+isSmallRed = body < body20 and isRedCandle
+
+for i = 0 to lookback - 1
+    greenCount := greenCount + (isGreenCandle[i] ? 1 : 0)
+    bigGreenCount := bigGreenCount + (isGreenCandle[i] and isBigCandle[i]? 1 : 0)
+    redCount   := redCount   + (isRedCandle[i] ? 1 : 0)
+    bigRedCount := bigRedCount + (isRedCandle[i] and isBigCandle[i]? 1 : 0)
+    smallGreenCount := smallGreenCount + (isGreenCandle[i] and isSmallCandle[i]? 1 : 0)
+    smallRedCount := smallRedCount + (isRedCandle[i] and isSmallCandle[i]? 1 : 0)
+
+// แสดงผลบนหน้าจอ
+if bar_index == last_bar_index
+    label.new(bar_index, high, text = "แท่งเขียว: " + str.tostring(greenCount) + "\nแท่งแดง: " + str.tostring(redCount) +"\nแท่งเขียวใหญ่: " + str.tostring(bigGreenCount) + "\nแท่งแดงใหญ่: " + str.tostring(bigRedCount) +"\nแท่งเขียวเล็ก: " + str.tostring(smallGreenCount) + "\nแท่งแดงหเล็ก: " + str.tostring(smallRedCount), style = label.style_label_left,  color=color.new(color.gray, 80), textcolor=color.white,force_overlay = true)
+    

@@ -1,0 +1,519 @@
+// Author: TXRZXN
+// Contact: naruechat.b@gmail.com
+//@version=6
+indicator("Display Bull System",overlay = true)
+///////////////--------------- input ---------------///////////////
+displayatr = input(defval = false, title = "Display ATR Line")
+src = input(defval = close ,title = "Source")
+showtable = input.string(defval = "System",title = "Show Table",options = ["System","Strategy","Both"])
+slType = input.string(title = "Stop Loss Type", defval = "SD", options = ["Low", "Trailing","SD"], display = display.data_window)
+
+port = input.int(defval = 1000, title = "Port Size",group="Strategy")
+riskpercent = input.float(defval = 2, title = "Port Size",group="Strategy")/100
+
+colBuy = input(#42bda8 , "Buy", group="Color Settings", inline="Buy")
+colSell = input(#ef9a9a, "Sell", group="Color Settings", inline="Buy")
+textcolorbuysel = input(#000000, "Text Color", group="Color Settings", inline="Buy")
+tableTitleColor = input(#295b79, "Headers", group="Color Settings", inline="Headers")
+textTitleColor = input(#ffffff, "Text Header", group="Color Settings", inline="Headers")
+
+fastAZ = input.int(defval = 12 ,title = "Fast EMA",group="Action Zone")
+slowAZ = input.int(defval = 26 ,title = "Slow EMA",group="Action Zone")
+
+atrLength = input.int(defval = 10 ,title = "ATR Length",group="ATR")
+atrmul = input.float(defval = 2.3 ,title = "Slow EMA",group="ATR")
+
+lengthBB = input.int(30, title = "Length EMA",group = "BB")
+multBB = input.float(1, title = "Multi  SD",group = "BB")
+maTypeBB = input.string(defval = "EMA",options = ["EMA","SMA"],title = "MA Type",group = "BB")
+
+Bhlength = input.int(defval = 30 ,title = "BreakHigh Length",group="BreakHigh")
+BhEma = input.int(defval = 52 ,title = "Slow EMA",group="BreakHigh")
+maTypeBH = input.string(defval = "EMA",options = ["EMA","SMA"],title = "MA Type",group = "BreakHigh")
+
+timeframepb = input.timeframe(defval = "1M",title = "timeframe",group = "Pivot Breakout") 
+typeInputpb = input.string("Traditional", "Type", options=["Traditional", "Fibonacci", "Woodie", "Classic", "DM", "Camarilla"],group = "Pivot Breakout")
+buypricepb = input.string(defval = "r1",title = "Buy price", options=["p", "r1", "s1", "r2", "s2", "r3","s3", "r4","s4", "r5","s5"],group = "Pivot Breakout")
+selpricepb = input.string(defval = "p",title = "Sell price", options=["p", "r1", "s1", "r2", "s2", "r3","s3", "r4","s4", "r5","s5"],group = "Pivot Breakout")
+
+rsiLength = input.int(14, title = "Length RSI",group = "RSI")
+rsiBuy = input.int(66, title = "RSI Buy",group = "RSI")
+rsiSell = input.int(43, title = "RSI Sell",group = "RSI")
+
+atrPeriodspt = input.int(10,    "ATR Length", minval = 1,group="SuperTrend")
+factorspt =    input.float(2.3, "Factor",     minval = 0.01, step = 0.01,group="SuperTrend")
+
+fastEma = input.int(defval = 50 ,title = "Fast EMA",group="EMA 50/200")
+slowEma = input.int(defval = 200 ,title = "Slow EMA",group="EMA 50/200")
+xtfEMa = input.timeframe(defval = '240',title = "timeframe",group="EMA 50/200")
+
+lengthKeltner = input.int(30, title = "Length EMA",group = "Keltner")
+multKeltner = input.float(1, title = "Multi  ATR",group = "Keltner")
+maTypeKeltner = input.string(defval = "EMA",options = ["EMA","SMA"],title = "MA Type",group = "Keltner")
+
+dayinputPivot = input(defval = 22,title = 'Bar to Calculate',group = "Pivot Channel")
+
+lengthSqzmmt = input(20, title="BB Length",group = "SQZMMT")
+multSqzmmt = input(2.0,title="BB MultFactor",group = "SQZMMT")
+lengthKCSqzmmt=input(30, title="KC Length",group = "SQZMMT")
+multKCSqzmmt = input(1, title="KC MultFactor",group = "SQZMMT")
+useTrueRangeSqzmmt = input(true, title="Use TrueRange (KC)",group = "SQZMMT")
+
+lengthUpperDonchain = input(defval = 8, title = 'Length Upper',group = "Donchain")
+lenthLowerDonchain = input(defval = 12 ,title = 'Lenth Lower',group = "Donchain")
+
+boxpDarvas = input(6, 'BOX LENGTH',group = "Darvas")
+
+pphl = "Pivot High-Low"
+leftLenHpphl = input.int(title="Pivot High", defval=7, minval=1, inline="Pivot High", group=pphl)
+rightLenHpphl = input.int(title="/", defval=7, minval=1, inline="Pivot High", group=pphl)
+leftLenLpphl = input.int(title="Pivot Low", defval=7, minval=1, inline="Pivot Low", group=pphl)
+rightLenLpphl = input.int(title="/", defval=7, minval=1, inline="Pivot Low", group=pphl)
+typetppphl = input.string(defval = "Mid",title = "Type TP" , options = ["Bottom","Mid"], group=pphl)
+
+
+SDPeriodsdt = input(defval = 25, title = 'Period SD',group = "SD Trailing")
+SDMultipliersdt = input(defval = 2 ,title = 'Multi SD',group = "SD Trailing")
+
+///////////////--------------- Action Zone ---------------///////////////
+azEmaFast = ta.ema(src,fastAZ)
+azEmaSlow = ta.ema(src,slowAZ)
+macdValue = azEmaFast - azEmaSlow
+isAZBull = ta.crossover(macdValue,0)
+isAZBear = ta.crossunder(macdValue,0)
+AzBuyCond = isAZBull and isAZBull[1] == false
+AzSellCond = isAZBear and isAZBear[1] == false
+isAzBullish = ta.barssince(AzBuyCond) < ta.barssince(AzSellCond)
+isAZBearish = ta.barssince(AzSellCond) < ta.barssince(AzBuyCond)
+textAZ = isAzBullish ? "Bull" : isAZBearish ? "Bear" : "NaN"
+dayAz =  isAzBullish ? ta.barssince(AzBuyCond) : isAZBearish ? ta.barssince(AzSellCond) : 0
+colorAz = isAzBullish ? colBuy : isAZBearish ? colSell : textcolorbuysel
+
+///////////////--------------- EMA Cross ---------------///////////////
+emaEmafast= ta.ema(src,fastEma)
+emaEmaSlow = ta.ema(src,slowEma)
+secEmaEmaFast = request.security(syminfo.tickerid, xtfEMa, emaEmafast,lookahead = barmerge.lookahead_on)
+secEmaEmaSlow = request.security(syminfo.tickerid, xtfEMa, emaEmaSlow,lookahead = barmerge.lookahead_on)
+isEMABull = ta.crossover(secEmaEmaFast,secEmaEmaSlow)
+isEMABear = ta.crossunder(secEmaEmaFast,secEmaEmaSlow)
+EmaBuyCond = isEMABull and isEMABull[1] == false
+EmaSellCond = isEMABear and isEMABear[1] == false
+isEMABullish = ta.barssince(EmaBuyCond) < ta.barssince(EmaSellCond)
+isEMABearish = ta.barssince(EmaSellCond) < ta.barssince(EmaBuyCond)
+textEMA = isEMABullish ? "Bull" : isEMABearish ? "Bear" : "NaN"
+dayEMA =  isEMABullish ? ta.barssince(EmaBuyCond) : isEMABearish ? ta.barssince(EmaSellCond) : 0
+colorEMA = isEMABullish ? colBuy : isEMABearish ? colSell : textcolorbuysel
+
+///////////////--------------- ATR ---------------///////////////
+ATR = ta.atr(atrLength)
+Stop = atrmul*ATR
+var ATRTrailingStop = 0.0
+ATRTrailingStop := if src>ATRTrailingStop[1] and src[1]>ATRTrailingStop[1]
+    math.max(ATRTrailingStop[1], src-Stop)
+else if src<ATRTrailingStop[1] and src[1]<ATRTrailingStop[1]
+    math.min(ATRTrailingStop[1], src+Stop)
+else if src>ATRTrailingStop[1]
+    src-Stop 
+else 
+    src+Stop
+
+isATRBull = ta.crossover(src,ATRTrailingStop)
+isATRBear = ta.crossunder(src,ATRTrailingStop)
+ATRBuyCond = isATRBull and isATRBull[1] == false
+ATRSellCond = isATRBear and isATRBear[1] == false
+isATRBullish = ta.barssince(ATRBuyCond) < ta.barssince(ATRSellCond)
+isATRBearish = ta.barssince(ATRSellCond) < ta.barssince(ATRBuyCond)
+textATR = isATRBullish ? "Bull" : isATRBearish ? "Bear" : "NaN"
+dayATR =  isATRBullish ? ta.barssince(ATRBuyCond) : isATRBearish ? ta.barssince(ATRSellCond) : 0
+colorATR = isATRBullish ? colBuy : isATRBearish ? colSell : textcolorbuysel
+
+///////////////--------------- BreakHigh ---------------///////////////
+float buyLine = na
+buyLine := ta.highest(src,Bhlength)[1] 
+output = maTypeBH=="EMA" ?ta.ema(src, BhEma) :ta.sma(src, BhEma)
+isBHBull = ta.crossover(src,buyLine)
+isBHBear = ta.crossunder(src,output)
+BHBuyCond = isBHBull and isBHBull[1] == false
+BHSellCond = isBHBear and isBHBear[1] == false
+isBHBullish = ta.barssince(BHBuyCond) < ta.barssince(BHSellCond)
+isBHBearish = ta.barssince(BHSellCond) < ta.barssince(BHBuyCond)
+buyBH = isBHBearish[1] and BHBuyCond
+sellBH = isBHBullish[1] and BHSellCond
+textBH = isBHBullish ? "Bull" : isBHBearish ? "Bear" : "NaN"
+dayBH =  isBHBullish ? ta.barssince(buyBH) : isBHBearish ? ta.barssince(sellBH) : 0
+colorBH = isBHBullish ? colBuy : isBHBearish ? colSell : textcolorbuysel
+
+///////////////--------------- BB ---------------///////////////
+basisBB =maTypeBB =="EMA" ?  ta.ema(src, lengthBB) :ta.sma(src,lengthBB)
+devBB = multBB * ta.stdev(src, lengthBB)
+upperBB = basisBB + devBB
+lowerBB = basisBB - devBB
+isBBBull = ta.crossover(src,upperBB)
+isBBBear = ta.crossunder(src,lowerBB)
+BBBuyCond = isBBBull and isBBBull[1] == false
+BBSellCond = isBBBear and isBBBear[1] == false
+isBBBullish = ta.barssince(BBBuyCond) < ta.barssince(BBSellCond)
+isBBBearish = ta.barssince(BBSellCond) < ta.barssince(BBBuyCond)
+buyBB = isBBBearish[1] and BBBuyCond
+sellBB = isBBBullish[1] and BBSellCond
+textBB = isBBBullish ? "Bull" : isBBBearish ? "Bear" : "NaN"
+dayBB =  isBBBullish ? ta.barssince(buyBB) : isBBBearish ? ta.barssince(sellBB) : 0
+colorBB = isBBBullish ? colBuy : isBBBearish ? colSell : textcolorbuysel
+
+///////////////--------------- RSI ---------------///////////////
+rsivalue = ta.rsi(src,rsiLength)
+isRSIBull = ta.crossover(rsivalue,rsiBuy)
+isRSIBear = ta.crossunder(rsivalue,rsiSell)
+RSIBuyCond = isRSIBull and isRSIBull[1] == false
+RSISellCond = isRSIBear and isRSIBear[1] == false
+isRSIBullish = ta.barssince(RSIBuyCond) < ta.barssince(RSISellCond)
+isRSIBearish = ta.barssince(RSISellCond) < ta.barssince(RSIBuyCond)
+buyRSI = isRSIBearish[1] and RSIBuyCond
+sellRSI = isRSIBullish[1] and RSISellCond
+textRSI = isRSIBullish ? "Bull" : isRSIBearish ? "Bear" : "NaN"
+dayRSI =  isRSIBullish ? ta.barssince(buyRSI) : isRSIBearish ? ta.barssince(sellRSI) : 0
+colorRSI = isRSIBullish ? colBuy : isRSIBearish ? colSell : textcolorbuysel
+
+///////////////--------------- Keltner ---------------///////////////
+basisKeltner =maTypeKeltner =="EMA" ?  ta.ema(src, lengthKeltner) :ta.sma(src,lengthKeltner)
+devKeltner = multKeltner * ta.atr(lengthKeltner)
+upperKeltner = basisKeltner + devKeltner
+lowerKeltner = basisKeltner - devKeltner
+isKeltneBull = ta.crossover(src,upperKeltner)
+isKeltneBear = ta.crossunder(src,lowerKeltner)
+KeltneBuyCond = isKeltneBull and isKeltneBull[1] == false
+KeltneSellCond = isKeltneBear and isKeltneBear[1] == false
+isKeltneBullish = ta.barssince(KeltneBuyCond) < ta.barssince(KeltneSellCond)
+isKeltneBearish = ta.barssince(KeltneSellCond) < ta.barssince(KeltneBuyCond)
+buyKeltner = isKeltneBearish[1] and KeltneBuyCond
+sellKeltner = isKeltneBullish[1] and KeltneSellCond
+textKeltner = isKeltneBullish ? "Bull" : isKeltneBearish ? "Bear" : "NaN"
+dayKeltner =  isKeltneBullish ? ta.barssince(buyKeltner) : isKeltneBearish ? ta.barssince(sellKeltner) : 0
+colorKeltner = isKeltneBullish ? colBuy : isKeltneBearish ? colSell : textcolorbuysel
+
+///////////////--------------- Pivot Breakout ---------------///////////////
+highedPV = ta.ema(high,dayinputPivot)
+lowedPV = ta.ema(low,dayinputPivot)
+closedPV = ta.ema(close,dayinputPivot)
+pivotPV = (highedPV+lowedPV+closedPV)/3
+rTwo = pivotPV+(highedPV-lowedPV)
+sTwo = pivotPV-(highedPV-lowedPV)
+isPVBull = ta.crossover(src,rTwo)
+isPVBear = ta.crossunder(src,sTwo)
+PVBuyCond = isPVBull and isPVBull[1] == false
+PVSellCond = isPVBear and isPVBear[1] == false
+isPVBullish = ta.barssince(PVBuyCond) < ta.barssince(PVSellCond)
+isPVBearish = ta.barssince(PVSellCond) < ta.barssince(PVBuyCond)
+buyPV = isPVBearish[1] and PVBuyCond
+sellPV = isPVBullish[1] and PVSellCond
+textPV = isPVBullish ? "Bull" : isPVBearish ? "Bear" : "NaN"
+dayPV =  isPVBullish ? ta.barssince(buyPV) : isPVBearish ? ta.barssince(sellPV) : 0
+colorPV = isPVBullish ? colBuy : isPVBearish ? colSell : textcolorbuysel
+
+///////////////--------------- SQZMMT ---------------///////////////
+sourceSqzmmt = src
+basisSqzmmt = ta.sma(sourceSqzmmt, lengthSqzmmt)
+devSqzmmt = multKCSqzmmt * ta.stdev(sourceSqzmmt, lengthSqzmmt)
+upperSqzmmt = basisSqzmmt + devSqzmmt
+lowerSqzmmt = basisSqzmmt - devSqzmmt
+// Calculate KC
+maSqzmmt = ta.sma(sourceSqzmmt, lengthKCSqzmmt)
+rangedSqzmmt= useTrueRangeSqzmmt ? ta.tr : (high - low)
+rangemaSqzmmt = ta.sma(rangedSqzmmt, lengthKCSqzmmt)
+upperKCSqzmmt = maSqzmmt + rangemaSqzmmt * multKCSqzmmt
+lowerKCSqzmmt = maSqzmmt - rangemaSqzmmt * multKCSqzmmt
+sqzOnSqzmmt  = (lowerSqzmmt > lowerKCSqzmmt) and (upperSqzmmt < upperKCSqzmmt)
+sqzOffSqzmmt = (lowerSqzmmt < lowerKCSqzmmt) and (upperSqzmmt > upperKCSqzmmt)
+noSqzSqzmmt  = (sqzOnSqzmmt == false) and (sqzOffSqzmmt == false)
+line = ta.linreg(sourceSqzmmt  -  math.avg(math.avg(ta.highest(high, lengthKCSqzmmt), ta.lowest(low, lengthKCSqzmmt)),ta.sma(src,lengthKCSqzmmt)),lengthKCSqzmmt,0)
+isSQZBull = ta.crossover(line,0)
+isSQZBear = ta.crossunder(line,0)
+SQZBuyCond = isSQZBull and isSQZBull[1] == false
+SQZSellCond = isSQZBear and isSQZBear[1] == false
+isSQZBullish = ta.barssince(SQZBuyCond) < ta.barssince(SQZSellCond)
+isSQZBearish = ta.barssince(SQZSellCond) < ta.barssince(SQZBuyCond)
+textSQZ = isSQZBullish ? "Bull" : isSQZBearish ? "Bear" : "NaN"
+daySQZ =  isSQZBullish ? ta.barssince(SQZBuyCond) : isSQZBearish ? ta.barssince(SQZSellCond) : 0
+colorSQZ = isSQZBullish ? colBuy : isSQZBearish ? colSell : textcolorbuysel
+
+///////////////--------------- Donchain ---------------///////////////
+upperDonchain = ta.highest(high[1],lengthUpperDonchain)
+lowerDonchain = ta.lowest(low[1],lenthLowerDonchain)
+isDonchainBull = ta.crossover(src,upperDonchain)
+isDonchainBear = ta.crossunder(src,lowerDonchain)
+DonchainBuyCond = isDonchainBull and isDonchainBull[1] == false
+DonchainSellCond = isDonchainBear and isDonchainBear[1] == false
+isDonchainBullish = ta.barssince(DonchainBuyCond) < ta.barssince(DonchainSellCond)
+isDonchainBearish = ta.barssince(DonchainSellCond) < ta.barssince(DonchainBuyCond)
+buyDonchain = isDonchainBearish[1] and DonchainBuyCond
+sellDonchain = isDonchainBullish[1] and DonchainSellCond
+textDonchain = isDonchainBullish ? "Bull" : isDonchainBearish ? "Bear" : "NaN"
+dayDonchain =  isDonchainBullish ? ta.barssince(buyDonchain) : isDonchainBearish ? ta.barssince(sellDonchain) : 0
+colorDonchain = isDonchainBullish ? colBuy : isDonchainBearish ? colSell : textcolorbuysel
+
+
+///////////////--------------- Darvas ---------------///////////////
+LLDarvas = ta.lowest(low, boxpDarvas)
+k1Darvas = ta.highest(high, boxpDarvas)
+k2Darvas = ta.highest(high, boxpDarvas - 1)
+k3Darvas = ta.highest(high, boxpDarvas - 2)
+NHDarvas = ta.valuewhen(high > k1Darvas[1], high, 0)
+box1Darvas = k3Darvas < k2Darvas
+TopBoxDarvas = ta.valuewhen(ta.barssince(high > k1Darvas[1]) == boxpDarvas - 2 and box1Darvas, NHDarvas, 0)
+BottomBoxDarvas = ta.valuewhen(ta.barssince(high > k1Darvas[1]) == boxpDarvas - 2 and box1Darvas, LLDarvas, 0)
+isDarvasBull = ta.crossover(src,TopBoxDarvas)
+isDarvasBear = ta.crossunder(src,BottomBoxDarvas)
+DarvasBuyCond = isDarvasBull and isDarvasBull[1] == false
+DarvasSellCond = isDarvasBear and isDarvasBear[1] == false
+isDarvasBullish = ta.barssince(DarvasBuyCond) < ta.barssince(DarvasSellCond)
+isDarvasBearish = ta.barssince(DarvasSellCond) < ta.barssince(DarvasBuyCond)
+buyDarvas = isDarvasBearish[1] and DarvasBuyCond
+sellDarvas = isDarvasBullish[1] and DarvasSellCond
+textDarvas = isDarvasBullish ? "Bull" : isDarvasBearish ? "Bear" : "NaN"
+dayDarvas =  isDarvasBullish ? ta.barssince(buyDarvas) : isDarvasBearish ? ta.barssince(sellDarvas) : 0
+colorDarvas = isDarvasBullish ? colBuy : isDarvasBearish ? colSell : textcolorbuysel
+
+///////////////--------------- Pivot Breakout ---------------///////////////
+weekChange = timeframe.change(timeframepb)
+pivotPointsArray = ta.pivot_point_levels(typeInputpb, weekChange)
+var float p = 0
+var float r1 = 0
+var float s1 = 0
+var float r2 = 0
+var float s2 = 0
+var float r3 = 0
+var float s3 = 0
+var float r4 = 0
+var float s4 = 0
+var float r5 = 0
+var float s5 = 0
+if weekChange
+    for i = 0 to array.size(pivotPointsArray) - 1
+        float pivotLevel = array.get(pivotPointsArray, i)
+        if i == 0
+            p := pivotLevel
+        else if i == 1
+            r1 := pivotLevel
+        else if i == 2
+            s1 := pivotLevel
+        else if i == 3
+            r2 := pivotLevel
+        else if i == 4
+            s2 := pivotLevel
+        else if i == 5
+            r3 := pivotLevel
+        else if i == 6
+            s3 := pivotLevel
+        else if i == 7
+            r4 := pivotLevel
+        else if i == 8
+            s4 := pivotLevel
+        else if i == 9
+            r5 := pivotLevel
+        else if i == 10
+            s5 := pivotLevel
+var float selectedBuyPricePPB = na
+var float selectedSellPricePPB = na
+
+switch buypricepb
+    "p" => selectedBuyPricePPB := p
+    "r1" => selectedBuyPricePPB := r1
+    "s1" => selectedBuyPricePPB := s1
+    "r2" => selectedBuyPricePPB := r2
+    "s2" => selectedBuyPricePPB := s2
+    "r3" => selectedBuyPricePPB := r3
+    "s3" => selectedBuyPricePPB := s3
+    "r4" => selectedBuyPricePPB := r4
+    "s4" => selectedBuyPricePPB := s4
+    "r5" => selectedBuyPricePPB := r5
+    "s5" => selectedBuyPricePPB := s5
+
+switch selpricepb
+    "p" => selectedSellPricePPB := p
+    "r1" => selectedSellPricePPB := r1
+    "s1" => selectedSellPricePPB := s1
+    "r2" => selectedSellPricePPB := r2
+    "s2" => selectedSellPricePPB := s2
+    "r3" => selectedSellPricePPB := r3
+    "s3" => selectedSellPricePPB := s3
+    "r4" => selectedSellPricePPB := r4
+    "s4" => selectedSellPricePPB := s4
+    "r5" => selectedSellPricePPB := r5
+    "s5" => selectedSellPricePPB := s5
+
+isPPBBull = ta.crossover(src,selectedBuyPricePPB)
+isPPBBear = ta.crossunder(src,selectedSellPricePPB)
+PPBBuyCond = isPPBBull and isPPBBull[1] == false
+PPBSellCond = isPPBBear and isPPBBear[1] == false
+isPPBBullish = ta.barssince(PPBBuyCond) < ta.barssince(PPBSellCond)
+isPPBBearish = ta.barssince(PPBSellCond) < ta.barssince(PPBBuyCond)
+buyPPB = isPPBBearish[1] and PPBBuyCond
+sellPPB = isPPBBullish[1] and PPBSellCond
+textPPB = isPPBBullish ? "Bull" : isPPBBearish ? "Bear" : "NaN"
+dayPPB =  isPPBBullish ? ta.barssince(buyPPB) : isPPBBearish ? ta.barssince(sellPPB) : 0
+colorPPB = isPPBBullish ? colBuy : isPPBBearish ? colSell : textcolorbuysel
+
+///////////////--------------- SuperTrend ---------------///////////////
+[supertrendspt, directionspt] = ta.supertrend(factorspt, atrPeriodspt)
+
+supertrendspt := barstate.isfirst ? na : supertrendspt
+isSPTBull =  directionspt < 0
+isSPTBear = directionspt > 0
+SPTBuyCond = isSPTBull and isSPTBull[1] == false
+SPTSellCond = isSPTBear and isSPTBear[1] == false
+isSPTBullish = ta.barssince(SPTBuyCond) < ta.barssince(SPTSellCond)
+isSPTBearish = ta.barssince(SPTSellCond) < ta.barssince(SPTBuyCond)
+textSPT = isSPTBullish ? "Bull" : isSPTBearish ? "Bear" : "NaN"
+daySPT =  isSPTBullish ? ta.barssince(SPTBuyCond) : isSPTBearish ? ta.barssince(SPTSellCond) : 0
+colorSPT = isSPTBullish ? colBuy : isSPTBearish ? colSell : textcolorbuysel
+
+///////////////--------------- PivotHigh-Low ---------------///////////////
+var float lastPhpphl = na
+var float lastPlpphl = na
+
+phpphl = ta.pivothigh(leftLenHpphl, rightLenHpphl)
+plpphl = ta.pivotlow(leftLenLpphl, rightLenLpphl)
+
+if not na(phpphl)
+    lastPhpphl := phpphl
+
+if not na(plpphl)
+    lastPlpphl := plpphl
+
+midlinepphl = (lastPhpphl+lastPlpphl)/2
+undertppphl = typetppphl =="Bottom" ?lastPlpphl:midlinepphl
+
+ispphlBull = ta.crossover(src,lastPhpphl)
+ispphlBear = ta.crossunder(src,undertppphl)
+pphlBuyCond = ispphlBull and ispphlBull[1] == false
+pphlSellCond = ispphlBear and ispphlBear[1] == false
+ispphlBullish = ta.barssince(pphlBuyCond) < ta.barssince(pphlSellCond)
+ispphlBearish = ta.barssince(pphlSellCond) < ta.barssince(pphlBuyCond)
+buypphl = ispphlBearish[1] and pphlBuyCond
+sellpphl = ispphlBullish[1] and pphlSellCond
+textpphl = ispphlBullish ? "Bull" : ispphlBearish ? "Bear" : "NaN"
+daypphl =  ispphlBullish ? ta.barssince(buypphl) : ispphlBearish ? ta.barssince(sellpphl) : 0
+colorpphl = ispphlBullish ? colBuy : ispphlBearish ? colSell : textcolorbuysel
+
+///////////////--------------- SD Trailing ---------------///////////////
+
+SDsdt = ta.stdev(close,SDPeriodsdt)
+Stopsdt = SDMultipliersdt*SDsdt
+
+var SDTrailingStopsdt = 0.0
+SDTrailingStopsdt := if close>SDTrailingStopsdt[1] and close[1]>SDTrailingStopsdt[1]
+    math.max(SDTrailingStopsdt[1], close-Stopsdt)
+else if close<SDTrailingStopsdt[1] and close[1]<SDTrailingStopsdt[1]
+    math.min(SDTrailingStopsdt[1], close+Stopsdt)
+else if close>SDTrailingStopsdt[1]
+    close-Stopsdt 
+else 
+    close+Stopsdt
+
+isSDTBull = ta.crossover(src,SDTrailingStopsdt)
+isSDTBear = ta.crossunder(src,SDTrailingStopsdt)
+SDTBuyCond = isSDTBull and isSDTBull[1] == false
+SDTSellCond = isSDTBear and isSDTBear[1] == false
+isSDTBullish = ta.barssince(SDTBuyCond) < ta.barssince(SDTSellCond)
+isSDTBearish = ta.barssince(SDTSellCond) < ta.barssince(SDTBuyCond)
+textSDT = isSDTBullish ? "Bull" : isSDTBearish ? "Bear" : "NaN"
+daySDT =  isSDTBullish ? ta.barssince(SDTBuyCond) : isSDTBearish ? ta.barssince(SDTSellCond) : 0
+colorSDT = isSDTBullish ? colBuy : isSDTBearish ? colSell : textcolorbuysel
+
+
+///////////////--------------- Strategy ---------------///////////////
+
+lossAmount = port * riskpercent
+entryprice = close
+ATRSL = ta.atr(10)
+StopSL = 2.3*ATRSL
+
+var ATRTrailingStopSL = 0.0
+ATRTrailingStopSL := if close>ATRTrailingStopSL[1] and close[1]>ATRTrailingStopSL[1]
+    math.max(ATRTrailingStopSL[1], close-StopSL)
+else if close<ATRTrailingStopSL[1] and close[1]<ATRTrailingStopSL[1]
+    math.min(ATRTrailingStopSL[1], close+StopSL)
+else if close>ATRTrailingStopSL[1]
+    close-StopSL 
+else 
+    close+StopSL
+
+SDSL = ta.stdev(close,10)
+sdtrail = SDSL*2.3
+SlSd = close - sdtrail
+
+slprice =  slType == "Trailing" ? math.min(ATRTrailingStop, close-Stop) : slType == "SD" ? SlSd :ta.lowest(10)
+// slprice = math.min(ATRTrailingStop, close-Stop)
+diff = entryprice - slprice
+percentsl = (diff/entryprice)*100
+positionsize = lossAmount / diff
+positionprice = positionsize * entryprice
+thb_close = request.security("OANDA:USDTHB", "D", close)
+positionpricethb = positionprice * thb_close
+
+var strategyTable = table.new(position = position.top_right , columns = 2, rows = 9, bgcolor = color.yellow, border_width = 1,border_color = color.black)
+if barstate.islast and showtable != "System"
+    table.cell(table_id = strategyTable, column = 0, row = 0, text = "Port", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 0, text = str.tostring(port),bgcolor = tableTitleColor, text_color =textTitleColor )
+    table.cell(table_id = strategyTable, column = 0, row = 1, text = "Risk Percent", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 1, text = str.tostring(riskpercent*100) + "%",bgcolor = tableTitleColor,text_color =textTitleColor )
+    table.cell(table_id = strategyTable, column = 0, row = 2, text = "Loss Amount", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 2, text = str.tostring(lossAmount),bgcolor = tableTitleColor, text_color =textTitleColor )
+    table.cell(table_id = strategyTable, column = 0, row = 3, text = "Entry Price", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 3, text = str.tostring(entryprice), bgcolor = tableTitleColor,text_color =textTitleColor )
+    table.cell(table_id = strategyTable, column = 0, row = 4, text = "SL Price", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 4, text = str.tostring(slprice),bgcolor = tableTitleColor, text_color =textTitleColor )
+    table.cell(table_id = strategyTable, column = 0, row = 5, text = "Diff", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 5, text = str.tostring(diff), bgcolor = tableTitleColor,text_color =textTitleColor )
+    table.cell(table_id = strategyTable, column = 0, row = 6, text = "Percent SL", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 6, text = str.tostring(percentsl),bgcolor = tableTitleColor, text_color =textTitleColor )
+    table.cell(table_id = strategyTable, column = 0, row = 7, text = "Position Size", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 7, text = str.tostring(positionsize), bgcolor = tableTitleColor,text_color =textTitleColor )
+    table.cell(table_id = strategyTable, column = 0, row = 8, text = "Position Price", text_color =textcolorbuysel )
+    table.cell(table_id = strategyTable, column = 1, row = 8, text = str.tostring(positionprice), bgcolor = tableTitleColor,text_color =textTitleColor )
+    // table.cell(table_id = strategyTable, column = 0, row = 9, text = "Position Price(THB)", text_color =textTitleColor )
+    // table.cell(table_id = strategyTable, column = 1, row = 9, text = str.tostring(positionpricethb),text_color =textTitleColor )
+
+///////////////--------------- Plot Talbe ---------------///////////////
+plot(displayatr ? ATRTrailingStop : na)
+plot(displayatr ? math.min(ATRTrailingStop, close-Stop) : na,color = color.white)
+var SystemTable = table.new(position = showtable == "Both" ? position.bottom_right : position.middle_right, columns = 2, rows = 16, bgcolor = color.yellow, border_width = 1,border_color = color.black)
+if barstate.islast and showtable != "Strategy"
+    table.cell(table_id = SystemTable, column = 0, row = 0, text = "System",bgcolor = tableTitleColor,text_color =textTitleColor )
+    table.cell(table_id = SystemTable, column = 1, row = 0, text = "Bull or Bear",bgcolor = tableTitleColor,text_color =textTitleColor )
+    table.cell(table_id = SystemTable, column = 0, row = 1, text = "Action Zone[MOM]" )
+    table.cell(table_id = SystemTable, column = 1, row = 1, text = textAZ + " Day " + str.tostring(dayAz) , bgcolor=colorAz)
+    table.cell(table_id = SystemTable, column = 0, row = 2, text = "ATR[VOLA]" )
+    table.cell(table_id = SystemTable, column = 1, row = 2, text = textATR + " Day " + str.tostring(dayATR) , bgcolor=colorATR)
+    table.cell(table_id = SystemTable, column = 0, row = 3, text = "BB Breakout[BO+VOLA]" )
+    table.cell(table_id = SystemTable, column = 1, row = 3, text = textBB + " Day " + str.tostring(dayBB) , bgcolor=colorBB)
+    table.cell(table_id = SystemTable, column = 0, row = 4, text = "BreakHigh[BO]" )
+    table.cell(table_id = SystemTable, column = 1, row = 4, text = textBH + " Day " + str.tostring(dayBH) , bgcolor=colorBH)
+    table.cell(table_id = SystemTable, column = 0, row = 5, text = "PPT Standard Breakout[BO]" )
+    table.cell(table_id = SystemTable, column = 1, row = 5, text = textPPB + " Day " + str.tostring(dayPPB) , bgcolor=colorPPB)
+    table.cell(table_id = SystemTable, column = 0, row = 6, text = "RSI[MOM]" )
+    table.cell(table_id = SystemTable, column = 1, row = 6, text = textRSI + " Day " + str.tostring(dayRSI) , bgcolor=colorRSI)
+    table.cell(table_id = SystemTable, column = 0, row = 7, text = "EMA 50/200 In 4HR[MA]" )
+    table.cell(table_id = SystemTable, column = 1, row = 7, text = textEMA + " Day " + str.tostring(dayEMA) , bgcolor=colorEMA)
+    table.cell(table_id = SystemTable, column = 0, row = 8, text = "SuperTrend[VOLA]" )
+    table.cell(table_id = SystemTable, column = 1, row = 8, text = textSPT + " Day " + str.tostring(daySPT) , bgcolor=colorSPT)
+    table.cell(table_id = SystemTable, column = 0, row = 9, text = "Keltner[VOLA]" )
+    table.cell(table_id = SystemTable, column = 1, row = 9, text = textKeltner + " Day " + str.tostring(dayKeltner) , bgcolor=colorKeltner)
+    table.cell(table_id = SystemTable, column = 0, row = 10, text = "PPT Channel[BO+MA]" )
+    table.cell(table_id = SystemTable, column = 1, row = 10, text = textPV + " Day " + str.tostring(dayPV) , bgcolor=colorPV)
+    table.cell(table_id = SystemTable, column = 0, row = 11, text = "SQZMMT Breakout[VOLA+MOM]" )
+    table.cell(table_id = SystemTable, column = 1, row = 11, text = textSQZ + " Day " + str.tostring(daySQZ) , bgcolor=colorSQZ)
+    table.cell(table_id = SystemTable, column = 0, row = 12, text = "Donchain[BO]" )
+    table.cell(table_id = SystemTable, column = 1, row = 12, text = textDonchain + " Day " + str.tostring(dayDonchain) , bgcolor=colorDonchain)
+    table.cell(table_id = SystemTable, column = 0, row = 13, text = "Darvas[BO]" )
+    table.cell(table_id = SystemTable, column = 1, row = 13, text = textDarvas + " Day " + str.tostring(dayDarvas) , bgcolor=colorDarvas)
+    table.cell(table_id = SystemTable, column = 0, row = 14, text = "PPT High-Low[BO]" )
+    table.cell(table_id = SystemTable, column = 1, row = 14, text = textpphl + " Day " + str.tostring(daypphl) , bgcolor=colorpphl)
+    table.cell(table_id = SystemTable, column = 0, row = 15, text = "SD Trailing[VOLA]" )
+    table.cell(table_id = SystemTable, column = 1, row = 15, text = textSDT + " Day " + str.tostring(daySDT) , bgcolor=colorSDT)
+
+
+    
+    
+
+

@@ -1,0 +1,150 @@
+// Author: TXRZXN
+// Contact: naruechat.b@gmail.com
+// @version = 5
+strategy(title="BreakHigh Strategy", overlay=true,precision = 6 ,initial_capital = 1000, commission_value = 0.2)
+MarkBuySig = input(defval = true ,title = "Show Buy/Sell Signal",group = "Indicator Setting")
+showema = input(defval = true ,title = "Show Line",group = "Indicator Setting")
+showbg = false
+src = input(close,title = "Source of Previous Bar",group = "Indicator Setting")
+maType = input.string(defval = "EMA",options = ["EMA","SMA"],group = "Indicator Setting")
+Period = input.int(30, "Number of previous bars",group = "Indicator Setting")
+PeriodEMA = input.int(52, "Length SMA",group = "Indicator Setting")
+xtf = input.timeframe(title='** Fix time frame EMA)', defval='D',group = "Indicator Setting")
+
+Buysig = input(defval=false, title='Start Strategy',group = "Strategy Setting")
+UseSl = input(defval=false, title='Use Stoploss Price',group = "Strategy Setting")
+slType = input.string(title = "Stop Loss Type", defval = "SD", options = ["Low", "Trailing","SD"], display = display.data_window,group = "Strategy Setting")
+Risk_Per_Trade = input(5, '% of Risk Per Trade',group = "Strategy Setting") / 100  // Risk% Per Trade Switch
+SLDAY = input(title='Lowest price of the previous number of bars', defval=10,group = "Strategy Setting")
+Mul = input(title='ATR Mul', defval=2.3,group = "Strategy Setting")
+
+Compound = true
+use_date_range = input(true,title =  "Use Date Range",group = "BackTest Setting")
+
+
+//BUY
+float buyLine = na
+buyLine := ta.highest(src,Period)[1] 
+
+//SELL
+
+output = maType=="EMA" ?ta.ema(close, PeriodEMA) :ta.sma(close, PeriodEMA)
+show = request.security(syminfo.tickerid, xtf, output)
+FastL = plot(showema ? show : na, color=color.new(color.white, 0), linewidth=2, title='Slow EMA')
+
+//Buy-Sell Signal
+Green =  ta.crossover(close,buyLine) 
+Red = ta.crossunder(close,show)
+
+buycond = Green and Green[1] == 0
+sellcond = Red and Red[1] == 0
+
+bullish = ta.barssince(buycond) < ta.barssince(sellcond)
+bearish = ta.barssince(sellcond) < ta.barssince(buycond)
+
+buy = bearish[1] and buycond
+sell = bullish[1] and sellcond
+
+plot(showema ? buyLine : na, linewidth=1, style=plot.style_linebr, color= bullish ? color.new(color.green, 0):color.new(color.red, 0))
+plotshape(MarkBuySig ? buy : na, style=shape.labelup, text='Buy Next Bar', textcolor=color.new(color.black, 0), location=location.belowbar, color=color.new(color.green, 0))
+plotshape(MarkBuySig ? sell : na, style=shape.labeldown, text='Sell Next Bar', textcolor=color.new(color.black, 0), location=location.abovebar, color=color.new(color.red, 0))
+bgcolor(showbg ? bullish ? color.new(color.green,90) : color.new(color.red,90) : na )
+
+
+// === BACKTEST RANGE === //
+FromYear = input.int(defval=2000, title='From Year', minval=1950,group = "BackTest Setting")
+FromMonth = input.int(defval=1, title='From Month', minval=1,group = "BackTest Setting")
+FromDay = input.int(defval=1, title='From Day', minval=1,group = "BackTest Setting")
+ToYear = input.int(defval=9999, title='To Year', minval=1950,group = "BackTest Setting")
+ToMonth = input.int(defval=1, title='To Month', minval=1,group = "BackTest Setting")
+ToDay = input.int(defval=1, title='To Day', minval=1,group = "BackTest Setting")
+in_date_range = use_date_range ? time > timestamp(FromYear, FromMonth, FromDay, 00, 00) and time < timestamp(ToYear, ToMonth, ToDay, 23, 59) : true
+
+//****************************************************************************//
+
+//////////////////////////////////////////////
+//    define strategy entry / exit          //
+//////////////////////////////////////////////
+
+//****************************************************************************//
+// LONG CONDITIONS
+
+Select_Long_Condition_1 = Green // Buy when Have Signal
+Open_Long_Condition = Select_Long_Condition_1 and strategy.opentrades == 0
+
+//****************************************************************************//
+// STOP LOSS Price
+
+ATR = ta.atr(SLDAY)
+Stop = Mul*ATR
+
+var ATRTrailingStop = 0.0
+ATRTrailingStop := if close>ATRTrailingStop[1] and close[1]>ATRTrailingStop[1]
+    math.max(ATRTrailingStop[1], close-Stop)
+else if close<ATRTrailingStop[1] and close[1]<ATRTrailingStop[1]
+    math.min(ATRTrailingStop[1], close+Stop)
+else if close>ATRTrailingStop[1]
+    close-Stop 
+else 
+    close+Stop
+
+
+SD = ta.stdev(src,SLDAY)
+sdtrail = SD*Mul
+SlSd = src - sdtrail
+
+SlAtr =  slType == "Trailing" ? math.min(ATRTrailingStop, close-Stop) : slType == "SD" ? SlSd :ta.lowest(SLDAY)
+
+
+float longSL = na
+longSL := Open_Long_Condition ?  SlAtr : longSL[1]  
+// plot(longSL)
+
+
+//****************************************************************************//
+// Cal StopLoss
+
+Long_Entry_Price = close
+Diff_OPEN_to_SL = math.abs(Long_Entry_Price - longSL)
+
+// Exit CONDITIONS
+
+Exit_Long_Condition = Red // Sell when Have Signal
+
+//****************************************************************************//
+// POSITION SIZE CAP
+
+float portSize = Compound ? strategy.netprofit + strategy.initial_capital : strategy.initial_capital
+float LossAmoutUnit = portSize * Risk_Per_Trade //50
+float PercentSL = ( Diff_OPEN_to_SL / Long_Entry_Price ) * 100
+float PositionSize = LossAmoutUnit / Diff_OPEN_to_SL
+
+
+//****************************************************************************//
+// ENTRY/EXIT
+
+if Buysig
+    if Open_Long_Condition and in_date_range
+        strategy.entry('LONG', strategy.long, qty=PositionSize)
+
+
+if Exit_Long_Condition and in_date_range
+    strategy.close('LONG')
+
+if close < longSL and UseSl
+    strategy.close('LONG')
+
+if use_date_range and not in_date_range
+    strategy.close('LONG')
+
+//****************************************************************************//
+// PLOT STOP LOSS
+
+longPlotSL = strategy.opentrades > 0 and strategy.position_size > 0 ? longSL : na
+// label.new(bar_index, high, text=str.tostring(longPlotSL),color=color.white, textcolor=color.black)
+plot(longPlotSL, title="", linewidth=2, style=plot.style_linebr, color=color.new(color.red, 0))
+
+
+
+//****************************************************************************//
+

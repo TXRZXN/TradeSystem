@@ -1,0 +1,115 @@
+// Author: TXRZXN
+// Contact: naruechat.b@gmail.com
+//@version=5
+strategy("Volatility-Based DCA", overlay=true, pyramiding=1, default_qty_type=strategy.fixed, currency=currency.USD, commission_value=0.2, slippage=300)
+
+// ===[ Parameters ]===
+start           = input.bool(false, "start")
+isbuymore       = input.bool(false, "Enable Buy More Signal")
+baseAmount      = input.float(100, "Base DCA Amount ($)", minval=0)
+volLen          = input.int(30, "Volatility Length (STDEV)", minval=1)
+sensitivity     = input.float(2.0, "Volatility Multiplier", minval=0.0)
+direction       = input.string("Follow", "DCA Logic Direction", options=["Counter", "Follow", "Basic"])
+open_date       = input.time(timestamp("2018-01-01 00:00:00"), "Start Trading On")
+close_date      = input.time(timestamp("2025-01-02 00:00:00"), "Stop Trading On")
+
+// ===[ Volatility Calculation ]===
+basis = ta.ema(close, volLen)
+dev   = ta.stdev(close, volLen)
+upper = basis + sensitivity * dev
+lower = basis - sensitivity * dev
+plot(basis, "Basis", color=color.gray)
+plot(upper, "Upper Band", color=color.blue)
+plot(lower, "Lower Band", color=color.blue)
+
+// ===[ Position Multiplier Logic ]===
+positionRatio = (close - lower) / (upper - lower)
+multiplier =
+     direction == "Counter" ? 2 - (1.5 * positionRatio) :
+     direction == "Follow"  ? 0.5 + (1.5 * positionRatio) : 
+     1.0
+multiplier := math.max(0.5, math.min(2.0, multiplier))
+
+// ===[ DCA Logic ]===
+actualDCA      = baseAmount * multiplier
+positionSize   = actualDCA / close
+isNewMonth     = month != month[1]
+firstOfMonth   = isNewMonth and not isNewMonth[1]
+withinDate     = time >= open_date and time <= close_date
+isCrossOver    = ta.crossover(close, lower)
+
+var float totalInvested = 0.0
+var float totalQty = 0.0
+var float avgCost = 0.0
+shouldBuy     = firstOfMonth and withinDate
+shouldBuyMore = isbuymore and isCrossOver and withinDate
+
+// ===[ Plot Labels for Debugging ]===
+if ((shouldBuy or shouldBuyMore)and not na(actualDCA))
+    totalInvested += actualDCA
+    totalQty += positionSize
+    avgCost := totalInvested / totalQty
+    // labelqty = "\n TotalQTY : $" + str.tostring(totalQty, "#.######") + "\n Avg Cost: $" + str.tostring(avgCost, "#.##") 
+    // labelText = "💰 $" + str.tostring(actualDCA, "#.##") + "\nTotal: $" + str.tostring(totalInvested, "#.##") 
+    labelText = "💰 $" + str.tostring(actualDCA, "#.##")
+    labelColor = shouldBuy ? color.green : color.orange
+    label.new(bar_index, low, labelText, style=label.style_label_up, color=labelColor, textcolor=color.white, size=size.small)
+
+// ===[ Orders ]===
+if (shouldBuy and start)
+    strategy.order("Buy Initial", strategy.long, qty=positionSize)
+
+if (shouldBuyMore and start)
+    strategy.order("Buy More", strategy.long, qty=positionSize)
+
+// ===[ Exit Strategy ]===
+if (time >= close_date)
+    strategy.close_all(comment="Auto Close After Date")
+
+if firstOfMonth and not withinDate
+    label.new(bar_index, low, "DCA", style=label.style_label_up, color=color.blue, textcolor=color.white, size=size.small)
+
+
+// ===[ Table ]===
+var float closeAtEnd = na
+isLastBarBeforeClose = time[1] < close_date and time >= close_date
+if isLastBarBeforeClose
+    closeAtEnd := close
+currentValue = totalQty * (na(closeAtEnd) ? close : closeAtEnd)
+netProfit = currentValue - totalInvested
+returnPercent = (netProfit / totalInvested) * 100
+totalYear = (close_date - open_date) / (1000 * 60 * 60 * 24 * 365)  
+growthMultiple = currentValue / totalInvested
+CAGR = (math.pow(growthMultiple, 1 / totalYear) - 1)*100
+var float peak = na
+peak := na(peak) ? currentValue : math.max(peak, currentValue)
+drawdown = peak == 0 ? 0 : (peak - currentValue) / peak * 100
+var float maxDrawdown = 0.0
+maxDrawdown := math.max(maxDrawdown, drawdown)
+
+
+var strategyTable = table.new(position = position.bottom_right , columns = 2, rows = 8, bgcolor = color.blue, border_width = 1,border_color = color.black )
+if start
+    table.cell(table_id = strategyTable, column = 0, row = 0, text = "Total DCA", text_color =color.white )
+    table.cell(table_id = strategyTable, column = 1, row = 0, text =  str.tostring(totalInvested, "#.######") ,bgcolor = color.green , text_color =color.white )
+
+    table.cell(table_id = strategyTable, column = 0, row = 1, text = "Total QTY", text_color =color.white )
+    table.cell(table_id = strategyTable, column = 1, row = 1, text =  str.tostring(totalQty, "#.#####") ,bgcolor = color.green , text_color =color.white )
+
+    table.cell(table_id = strategyTable, column = 0, row = 2, text = "AVG COST", text_color =color.white )
+    table.cell(table_id = strategyTable, column = 1, row = 2, text =  str.tostring(avgCost, "#.#####") ,bgcolor = color.green , text_color =color.white )
+
+    table.cell(table_id = strategyTable, column = 0, row = 3, text = "Current Value", text_color =color.white )
+    table.cell(table_id = strategyTable, column = 1, row = 3, text =  str.tostring(currentValue, "#.##") ,bgcolor = color.green , text_color =color.white )
+
+    table.cell(table_id = strategyTable, column = 0, row = 4, text = "Net Profit", text_color =color.white )
+    table.cell(table_id = strategyTable, column = 1, row = 4, text =  str.tostring(netProfit, "#.##") ,bgcolor = color.green , text_color =color.white )
+
+    table.cell(table_id = strategyTable, column = 0, row = 5, text = "% Profit", text_color =color.white )
+    table.cell(table_id = strategyTable, column = 1, row = 5, text =  str.tostring(returnPercent, "#.##")+"%" ,bgcolor = color.green , text_color =color.white )
+
+    table.cell(table_id = strategyTable, column = 0, row = 6, text = "CAGR", text_color =color.white )
+    table.cell(table_id = strategyTable, column = 1, row = 6, text =  str.tostring(CAGR, "#.##")+"%" ,bgcolor = color.green , text_color =color.white )
+
+    table.cell(table_id = strategyTable, column = 0, row = 7, text = "Max DD", text_color =color.white )
+    table.cell(table_id = strategyTable, column = 1, row = 7, text =  str.tostring(maxDrawdown, "#.##")+"%" ,bgcolor = color.green , text_color =color.white )
