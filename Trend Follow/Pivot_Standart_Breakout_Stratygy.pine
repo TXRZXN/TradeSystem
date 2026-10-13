@@ -1,10 +1,11 @@
-// Author: TXRZXN
-// Contact: naruechat.b@gmail.com
-//@version=6
+//@version=5
 strategy("Month Pivots", overlay = true,precision = 6 ,initial_capital = 1000, commission_value = 0.2)
+//=============================================================================//
+//                        ⚙️ INDICATOR SETTINGS
+//=============================================================================//
 timeframe = input.timeframe(defval = "1M",title = "timeframe") 
 typeInput = input.string("Traditional", "Type", options=["Traditional", "Fibonacci", "Woodie", "Classic", "DM", "Camarilla"])
-src = input(defval = close,title = "Source")
+src = input.source(defval = close,title = "Source")
 buyprice = input.string(defval = "r1",title = "Buy price", options=["p", "r1", "s1", "r2", "s2", "r3","s3", "r4","s4", "r5","s5"])
 selprice = input.string(defval = "p",title = "Sell price", options=["p", "r1", "s1", "r2", "s2", "r3","s3", "r4","s4", "r5","s5"])
 plotp = input.bool(defval = true,title = "P",inline = "Plot")
@@ -19,15 +20,29 @@ plots4 = input.bool(defval = false,title = "S4",inline = "Plot2")
 plotr5 = input.bool(defval = false,title = "R5",inline = "Plot2")
 plots5 = input.bool(defval = false,title = "S5",inline = "Plot2")
 
-Buysig = input(defval=false, title='Start Strategy',group = "Strategy Setting")
-UseSl = input(defval=true, title='Use Stoploss Price',group = "Strategy Setting")
-Compound = true
-Risk_Per_Trade = input(5, '% of Risk Per Trade',group = "Strategy Setting") / 100  // Risk% Per Trade Switch
-slType = input.string(title = "Stop Loss Type", defval = "SD", options = ["Low", "Trailing","SD","Support"], display = display.data_window,group = "Strategy Setting")
-SLDAY = input(title='Previous Bars (Trailing)', defval=10,group = "Strategy Setting")
-mul = input(title='Multiple (Trailing)', defval=2.3,group = "Strategy Setting")
+//=============================================================================//
+//                        ⚙️ STRATEGY & BACKTEST SETTINGS
+//=============================================================================//
+Buysig = input(defval=false, title='Start Strategy', group = "Strategy Settings")
+UseSl = input(defval=false, title='Use Stop Loss', group = "Strategy Settings")
+Compound = input(defval = true ,title =  "Compound Profit(กำไรทบต้น)", group = "Strategy Settings")
+Risk_Per_Trade = input(5, '% of Risk Per Trade', group = "Strategy Settings") / 100
+slType = input.string(title = "Stop Loss Type", defval = "Trailing", options = ["Low", "Trailing", "SD", "Support"], display = display.data_window, group = "Strategy Settings")
+SLDAY = input.int(title='Bars Previous Calculate SL', defval=10, group = "Strategy Settings")
+mul = input.float(title='Multiple For Calculate SL', defval=2.3, group = "Strategy Settings")
 
+use_date_range = input(defval = true ,title = "Use Date Range", group = "Backtest Settings")
+FromYear  = input.int(defval=2000, title='From Year', minval=1950, group = "Backtest Settings")
+FromMonth = input.int(defval=1, title='From Month', minval=1, group = "Backtest Settings")
+FromDay   = input.int(defval=1, title='From Day', minval=1, group = "Backtest Settings")
+ToYear    = input.int(defval=9999, title='To Year', minval=1950, group = "Backtest Settings")
+ToMonth   = input.int(defval=1, title='To Month', minval=1, group = "Backtest Settings")
+ToDay     = input.int(defval=1, title='To Day', minval=1, group = "Backtest Settings")
+in_date_range = use_date_range ? time > timestamp(FromYear, FromMonth, FromDay, 00, 00) and time < timestamp(ToYear, ToMonth, ToDay, 23, 59) : true
 
+//=============================================================================//
+//                        🧮 INDICATOR CALCULATIONS
+//=============================================================================//
 weekChange = timeframe.change(timeframe)
 pivotPointsArray = ta.pivot_point_levels(typeInput, weekChange)
 var float p = 0
@@ -107,8 +122,6 @@ switch selprice
     "r5" => selectedSellPrice := r5
     "s5" => selectedSellPrice := s5
 
-
-
 isBull = ta.crossover(src,selectedBuyPrice)
 isBear = ta.crossunder(src,selectedSellPrice)
 BuyCond = isBull and isBull[1] == false
@@ -120,119 +133,74 @@ sell = isBullish[1] and SellCond
 
 plotshape(buy, style=shape.labelup, text='Buy Next Bar', textcolor=color.new(color.black, 0), location=location.belowbar, color=color.new(color.green, 0))
 plotshape(sell, style=shape.labeldown, text='Sell Next Bar', textcolor=color.new(color.black, 0), location=location.abovebar, color=color.new(color.red, 0))
-
-// === BACKTEST RANGE === //
-use_date_range = input(true,title =  "Use Date Range",group = "Backtest Setting")
-FromYear = input.int(defval=2000, title='From Year', minval=1950,group = "Backtest Setting")
-FromMonth = input.int(defval=1, title='From Month', minval=1,group = "Backtest Setting")
-FromDay = input.int(defval=1, title='From Day', minval=1,group = "Backtest Setting")
-ToYear = input.int(defval=9999, title='To Year', minval=1950,group = "Backtest Setting")
-ToMonth = input.int(defval=1, title='To Month', minval=1,group = "Backtest Setting")
-ToDay = input.int(defval=1, title='To Day', minval=1,group = "Backtest Setting")
-in_date_range = use_date_range ? time > timestamp(FromYear, FromMonth, FromDay, 00, 00) and time < timestamp(ToYear, ToMonth, ToDay, 23, 59) : true
-
-//****************************************************************************//
-
-//////////////////////////////////////////////
-//    define strategy entry / exit          //
-//////////////////////////////////////////////
-
-//****************************************************************************//
-// LONG CONDITIONS
-
-Select_Long_Condition_1 = isBull   // Buy when Have Signal
+//=============================================================================//
+//                        🚦 ENTRY & EXIT CONDITIONS
+//=============================================================================//
+Select_Long_Condition_1 = isBull
 Open_Long_Condition = Select_Long_Condition_1 and strategy.opentrades == 0
+Exit_Long_Condition = sell
 
-//****************************************************************************//
-// STOP LOSS Price
+//=============================================================================//
+//                        🛑 STOPLOSS CALCULATION
+//=============================================================================//
+float atr = ta.atr(SLDAY)
+float stopATR = mul * atr
+float sd = ta.stdev(close, SLDAY)
+float stopSD = mul * sd
 
-// longSL = ta.lowest(low, SLDAY)[1]
-ATR = ta.atr(SLDAY)
-Stop = mul*ATR
+var float ATRTrailingStop = na
+if na(ATRTrailingStop)
+    ATRTrailingStop := close - stopATR
 
-var ATRTrailingStop = 0.0
-ATRTrailingStop := if close>ATRTrailingStop[1] and close[1]>ATRTrailingStop[1]
-    math.max(ATRTrailingStop[1], close-Stop)
-else if close<ATRTrailingStop[1] and close[1]<ATRTrailingStop[1]
-    math.min(ATRTrailingStop[1], close+Stop)
-else if close>ATRTrailingStop[1]
-    close-Stop 
+ATRTrailingStop := if close > ATRTrailingStop[1] and close[1] > ATRTrailingStop[1]
+    math.max(ATRTrailingStop[1], close - stopATR)
+else if close < ATRTrailingStop[1] and close[1] < ATRTrailingStop[1]
+    math.min(ATRTrailingStop[1], close + stopATR)
+else if close > ATRTrailingStop[1]
+    close - stopATR 
 else 
-    close+Stop
+    close + stopATR
 
-SD = ta.stdev(src,SLDAY)
-sdtrail = SD*mul
-SlSd = close - sdtrail
+float SlSd = close - stopSD
+float SlLow = ta.lowest(low, SLDAY)
 
-SlAtr =  slType == "Trailing" ? math.min(ATRTrailingStop, close-Stop) : slType == "SD" ? SlSd : slType == "Low" ? ta.lowest(SLDAY) : s1
+float longBaseSL = slType == "Trailing" ? math.min(ATRTrailingStop, close - stopATR) : slType == "SD" ? SlSd : slType == "Low" ? SlLow : s1
 
 float longSL = na
-longSL := isBearish ?  SlAtr : longSL[1]  
-// plot(math.min(ATRTrailingStop, close-Stop),color = color.white)
+longSL := Open_Long_Condition ? longBaseSL : longSL[1]
 
 
-//****************************************************************************//
-// Cal StopLoss
-
+//=============================================================================//
+//                        ⚖️ POSITION SIZING & MONEY MANAGEMENT
+//=============================================================================//
 Long_Entry_Price = close
 Diff_OPEN_to_SL = math.abs(Long_Entry_Price - longSL)
 
-// Exit CONDITIONS
+float rawPortSize = Compound ? strategy.netprofit + strategy.initial_capital : strategy.initial_capital
+float portSize = math.max(rawPortSize, 0)
+float LossAmoutUnit = portSize > 0 ? portSize * Risk_Per_Trade : 0
+float maxQtyAllowed = 1e12
+float PositionSize = portSize > 0 and Diff_OPEN_to_SL > 0 ? LossAmoutUnit / Diff_OPEN_to_SL : 0
+PositionSize := math.min(PositionSize, maxQtyAllowed)
 
-Exit_Long_Condition = sell  // Sell when Have Signal
+//=============================================================================//
+//                        🚀 EXECUTION (ENTRY/EXIT)
+//=============================================================================//
+bool canTrade = portSize > 0 and PositionSize > 0 and in_date_range
+bool noPosition = strategy.position_size == 0
+bool hasLong = strategy.position_size > 0
 
-//****************************************************************************//
-// POSITION SIZE CAP
+if Buysig and Open_Long_Condition and canTrade and noPosition
+    strategy.entry(id = 'LONG', direction = strategy.long, qty = PositionSize)
 
-float portSize = Compound ? strategy.netprofit + strategy.initial_capital : strategy.initial_capital
-float LossAmoutUnit = portSize * Risk_Per_Trade
-float PercentSL = ( Diff_OPEN_to_SL / Long_Entry_Price ) * 100
-float PositionSize = LossAmoutUnit / Diff_OPEN_to_SL
+bool exitBySignal = Exit_Long_Condition
+bool exitBySL     = UseSl and low <= longSL
+bool exitByDate   = use_date_range and not in_date_range
 
-
-//****************************************************************************//
-// ENTRY/EXIT
-
-if Buysig
-    if Open_Long_Condition and in_date_range 
-        strategy.entry('LONG', strategy.long, qty=PositionSize,comment = str.tostring(longSL))
-
-
-if Exit_Long_Condition and in_date_range
-    strategy.close('LONG')
-    
-if close < longSL and UseSl
+if hasLong and (exitBySignal or exitBySL or exitByDate)
     strategy.close('LONG')
 
-if use_date_range and not in_date_range
-    strategy.close('LONG')
-
-// entryprice = strategy.opentrades.entry_price(0)
-// slPrice = str.tonumber(strategy.opentrades.entry_comment(0))
-// diff = entryprice - slPrice
-
-// rr1 = entryprice + diff
-// rr2 = entryprice +(diff*2)
-// if diff == 0
-//     rr1 := entryprice + (entryprice-oldSl)
-// else
-    
-// rr2 =  entryprice + (diff*2)
-// float test = na
-// if strategy.opentrades > 0 and close >= rr1 
-//     longSL := entryprice
-// if strategy.opentrades > 0 and close >= rr2
-//     longSL := rr1
-//****************************************************************************//
-// PLOT STOP LOSS
-
-longPlotSL = strategy.opentrades > 0 and strategy.position_size > 0 ? longSL : na
-var test2 = longPlotSL[0]
-plot(longPlotSL, title="", linewidth=2, style=plot.style_linebr, color=color.new(color.orange, 0))
-
-//****************************************************************************//
-
-
-
+float longPlotSL = hasLong and UseSl and not na(longSL) and longSL > 0 ? longSL : na
+plot(longPlotSL, title = "Long Stop Loss", linewidth = 2, style = plot.style_linebr, color = color.new(color.red, 0))
 
 

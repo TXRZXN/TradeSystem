@@ -1,117 +1,129 @@
-// Author: TXRZXN
-// Contact: naruechat.b@gmail.com
 // @version = 5
-
 strategy(title="SD Trailing Strategy", overlay=true,precision = 6 ,initial_capital = 1000, commission_value = 0.2)
+//=============================================================================//
+//                        ⚙️ INDICATOR SETTINGS
+//=============================================================================//
+SDPeriod = input.int(25, "ATR Period", group = "Indicator Settings")
+SDMultiplier = input.float(2, "ATR Multiplier", group = "Indicator Settings")
+displayAtrLine  = input.bool(defval=true, title='display Atr Line', group = "Indicator Settings")
 
-SDPeriod = input.int(25, "ATR Period")
-SDMultiplier = input.float(2, "ATR Multiplier")
-displayAtrLine  = input(defval=true, title='display Atr Line')
-Risk_Per_Trade = input(5, '% of Risk Per Trade') / 100  // Risk% Per Trade Switch
-Buysig = input(defval=false, title='Start Strategy')
-UseSl = input(defval=false, title='Use Stoploss Price')
-Compound = input(defval = true ,title =  "Compound Profit(กำไรทบต้น)")
+//=============================================================================//
+//                        ⚙️ STRATEGY & BACKTEST SETTINGS
+//=============================================================================//
+Buysig = input(defval=false, title='Start Strategy', group = "Strategy Settings")
+UseSl = input(defval=false, title='Use Stop Loss', group = "Strategy Settings")
+Compound = input(defval = true ,title =  "Compound Profit(กำไรทบต้น)", group = "Strategy Settings")
+Risk_Per_Trade = input(5, '% of Risk Per Trade', group = "Strategy Settings") / 100
+slType = input.string(title = "Stop Loss Type", defval = "SD Line", options = ["Low", "Trailing", "SD", "SD Line"], display = display.data_window, group = "Strategy Settings")
+SLDAY = input.int(title='Bars Previous Calculate SL', defval=10, group = "Strategy Settings")
+mul = input.float(title='Multiple For Calculate SL', defval=2.3, group = "Strategy Settings")
 
-SD = ta.stdev(close,SDPeriod)
-Stop = SDMultiplier*SD
-
-var SDTrailingStop = 0.0
-SDTrailingStop := if close>SDTrailingStop[1] and close[1]>SDTrailingStop[1]
-    math.max(SDTrailingStop[1], close-Stop)
-else if close<SDTrailingStop[1] and close[1]<SDTrailingStop[1]
-    math.min(SDTrailingStop[1], close+Stop)
-else if close>SDTrailingStop[1]
-    close-Stop 
-else 
-    close+Stop
-
-var Position = 0.0
-Position := if close[1]<SDTrailingStop[1] and close>SDTrailingStop[1]
-    1
-else if close[1]>SDTrailingStop[1] and close<SDTrailingStop[1]
-    -1
-else
-    Position[1]
-
-
-
-PlotColor = Position == -1 ? color.red: Position == 1 ? color.green : color.navy
-plot(displayAtrLine ? SDTrailingStop : na, color=PlotColor, title="ATR Trailing Stop")
-
-// === BACKTEST RANGE === //
-use_date_range = input(true,title =  "Use Date Range")
-FromYear = input.int(defval=2000, title='From Year', minval=1950)
-FromMonth = input.int(defval=1, title='From Month', minval=1)
-FromDay = input.int(defval=1, title='From Day', minval=1)
-ToYear = input.int(defval=9999, title='To Year', minval=1950)
-ToMonth = input.int(defval=1, title='To Month', minval=1)
-ToDay = input.int(defval=1, title='To Day', minval=1)
+use_date_range = input(defval = true ,title = "Use Date Range", group = "Backtest Settings")
+FromYear  = input.int(defval=2000, title='From Year', minval=1950, group = "Backtest Settings")
+FromMonth = input.int(defval=1, title='From Month', minval=1, group = "Backtest Settings")
+FromDay   = input.int(defval=1, title='From Day', minval=1, group = "Backtest Settings")
+ToYear    = input.int(defval=9999, title='To Year', minval=1950, group = "Backtest Settings")
+ToMonth   = input.int(defval=1, title='To Month', minval=1, group = "Backtest Settings")
+ToDay     = input.int(defval=1, title='To Day', minval=1, group = "Backtest Settings")
 in_date_range = use_date_range ? time > timestamp(FromYear, FromMonth, FromDay, 00, 00) and time < timestamp(ToYear, ToMonth, ToDay, 23, 59) : true
 
-//****************************************************************************//
+//=============================================================================//
+//                        🧮 INDICATOR CALCULATIONS
+//=============================================================================//
+float SD_ind = ta.stdev(close,SDPeriod)
+float StopIndicator = SDMultiplier*SD_ind
 
-//////////////////////////////////////////////
-//    define strategy entry / exit          //
-//////////////////////////////////////////////
+var float SDTrailingStopIndicator = na
+if na(SDTrailingStopIndicator)
+    SDTrailingStopIndicator := close - StopIndicator
 
-//****************************************************************************//
-// LONG CONDITIONS
+SDTrailingStopIndicator := if close>SDTrailingStopIndicator[1] and close[1]>SDTrailingStopIndicator[1]
+    math.max(SDTrailingStopIndicator[1], close-StopIndicator)
+else if close<SDTrailingStopIndicator[1] and close[1]<SDTrailingStopIndicator[1]
+    math.min(SDTrailingStopIndicator[1], close+StopIndicator)
+else if close>SDTrailingStopIndicator[1]
+    close-StopIndicator 
+else 
+    close+StopIndicator
 
-Select_Long_Condition_1 = Position == 1  // Buy when Have Signal
+var float Position = 0.0
+Position := if close[1]<SDTrailingStopIndicator[1] and close>SDTrailingStopIndicator[1]
+    1
+else if close[1]>SDTrailingStopIndicator[1] and close<SDTrailingStopIndicator[1]
+    -1
+else
+    nz(Position[1])
+
+PlotColor = Position == -1 ? color.red: Position == 1 ? color.green : color.navy
+plot(displayAtrLine ? SDTrailingStopIndicator : na, color=PlotColor, title="SD Trailing Stop")
+//=============================================================================//
+//                        🚦 ENTRY & EXIT CONDITIONS
+//=============================================================================//
+Select_Long_Condition_1 = Position == 1
 Open_Long_Condition = Select_Long_Condition_1 and strategy.opentrades == 0
+Exit_Long_Condition = Position == -1
 
-//****************************************************************************//
-// STOP LOSS Price
+//=============================================================================//
+//                        🛑 STOPLOSS CALCULATION
+//=============================================================================//
+float atr = ta.atr(SLDAY)
+float stopATR = mul * atr
+float sd = ta.stdev(close, SLDAY)
+float stopSD = mul * sd
+
+var float ATRTrailingStop = na
+if na(ATRTrailingStop)
+    ATRTrailingStop := close - stopATR
+
+ATRTrailingStop := if close > ATRTrailingStop[1] and close[1] > ATRTrailingStop[1]
+    math.max(ATRTrailingStop[1], close - stopATR)
+else if close < ATRTrailingStop[1] and close[1] < ATRTrailingStop[1]
+    math.min(ATRTrailingStop[1], close + stopATR)
+else if close > ATRTrailingStop[1]
+    close - stopATR 
+else 
+    close + stopATR
+
+float SlSd = close - stopSD
+float SlLow = ta.lowest(low, SLDAY)
+
+float longBaseSL = slType == "Trailing" ? math.min(ATRTrailingStop, close - stopATR) : slType == "SD" ? SlSd : slType == "Low" ? SlLow : SDTrailingStopIndicator
 
 float longSL = na
-longSL := Open_Long_Condition ? SDTrailingStop : longSL[1]  
-// longSL := close>SDTrailingStop[1] and close[1]>SDTrailingStop[1] ? math.max(SDTrailingStop[1], close-Stop)  :longSL[1]  
+longSL := Open_Long_Condition ? longBaseSL : longSL[1]
 
 
-//****************************************************************************//
-// Cal StopLoss
-
+//=============================================================================//
+//                        ⚖️ POSITION SIZING & MONEY MANAGEMENT
+//=============================================================================//
 Long_Entry_Price = close
 Diff_OPEN_to_SL = math.abs(Long_Entry_Price - longSL)
 
-// Exit CONDITIONS
+float rawPortSize = Compound ? strategy.netprofit + strategy.initial_capital : strategy.initial_capital
+float portSize = math.max(rawPortSize, 0)
+float LossAmoutUnit = portSize > 0 ? portSize * Risk_Per_Trade : 0
+float maxQtyAllowed = 1e12
+float PositionSize = portSize > 0 and Diff_OPEN_to_SL > 0 ? LossAmoutUnit / Diff_OPEN_to_SL : 0
+PositionSize := math.min(PositionSize, maxQtyAllowed)
 
-Exit_Long_Condition = Position == -1 // Sell when Have Signal
+//=============================================================================//
+//                        🚀 EXECUTION (ENTRY/EXIT)
+//=============================================================================//
+bool canTrade = portSize > 0 and PositionSize > 0 and in_date_range
+bool noPosition = strategy.position_size == 0
+bool hasLong = strategy.position_size > 0
 
-//****************************************************************************//
-// POSITION SIZE CAP
+if Buysig and Open_Long_Condition and canTrade and noPosition
+    strategy.entry(id = 'LONG', direction = strategy.long, qty = PositionSize)
 
-float portSize = Compound ? strategy.netprofit + strategy.initial_capital : strategy.initial_capital
-float LossAmoutUnit = portSize * Risk_Per_Trade //50
-float PercentSL = ( Diff_OPEN_to_SL / Long_Entry_Price ) * 100
-float PositionSize = LossAmoutUnit / Diff_OPEN_to_SL
+bool exitBySignal = Exit_Long_Condition
+bool exitBySL     = UseSl and low <= longSL
+bool exitByDate   = use_date_range and not in_date_range
 
-
-//****************************************************************************//
-// ENTRY/EXIT
-
-if Buysig
-    if Open_Long_Condition and in_date_range 
-        strategy.entry('LONG', strategy.long, qty=PositionSize)
-
-
-if Exit_Long_Condition and in_date_range
+if hasLong and (exitBySignal or exitBySL or exitByDate)
     strategy.close('LONG')
 
-if close < longSL and UseSl
-    strategy.close('LONG')
+float longPlotSL = hasLong and UseSl and not na(longSL) and longSL > 0 ? longSL : na
+plot(longPlotSL, title = "Long Stop Loss", linewidth = 2, style = plot.style_linebr, color = color.new(color.red, 0))
 
-if use_date_range and not in_date_range
-    strategy.close('LONG')
-
-//****************************************************************************//
-// PLOT STOP LOSS
-
-longPlotSL = strategy.opentrades > 0 and strategy.position_size > 0 ? longSL : na
-// label.new(bar_index, high, text=str.tostring(longPlotSL),color=color.white, textcolor=color.black)
-plot(longPlotSL, title="", linewidth=2, style=plot.style_linebr, color=color.new(color.red, 0))
-
-
-
-//****************************************************************************//
 

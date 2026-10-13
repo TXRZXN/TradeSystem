@@ -1,150 +1,131 @@
-// Author: TXRZXN
-// Contact: naruechat.b@gmail.com
-// @version = 5
-strategy(title="BreakHigh Strategy", overlay=true,precision = 6 ,initial_capital = 1000, commission_value = 0.2)
-MarkBuySig = input(defval = true ,title = "Show Buy/Sell Signal",group = "Indicator Setting")
-showema = input(defval = true ,title = "Show Line",group = "Indicator Setting")
-showbg = false
-src = input(close,title = "Source of Previous Bar",group = "Indicator Setting")
-maType = input.string(defval = "EMA",options = ["EMA","SMA"],group = "Indicator Setting")
-Period = input.int(30, "Number of previous bars",group = "Indicator Setting")
-PeriodEMA = input.int(52, "Length SMA",group = "Indicator Setting")
-xtf = input.timeframe(title='** Fix time frame EMA)', defval='D',group = "Indicator Setting")
+//@version=5
+strategy("Best Bollinger Bands BreakOut", overlay=true,precision = 6 ,initial_capital = 1000, commission_value = 0.2)
+//=============================================================================//
+//                        ⚙️ INDICATOR SETTINGS
+//=============================================================================//
+isShowSig = input.bool(defval = true,title = 'Show Buy/Sell Signal',group = "Indicator Settings")
+length = input.int(30, title = "Length EMA",group = "Indicator Settings")
+mult = input.float(1, title = "Multi  SD",group = "Indicator Settings")
+xtf = input.timeframe(title='** Fix chart to which time frame ? **)', defval='D',group = "Indicator Settings")
+maType = input.string(defval = "EMA",options = ["EMA","SMA"],title = "MA Type",group = "Indicator Settings")
 
-Buysig = input(defval=false, title='Start Strategy',group = "Strategy Setting")
-UseSl = input(defval=false, title='Use Stoploss Price',group = "Strategy Setting")
-slType = input.string(title = "Stop Loss Type", defval = "SD", options = ["Low", "Trailing","SD"], display = display.data_window,group = "Strategy Setting")
-Risk_Per_Trade = input(5, '% of Risk Per Trade',group = "Strategy Setting") / 100  // Risk% Per Trade Switch
-SLDAY = input(title='Lowest price of the previous number of bars', defval=10,group = "Strategy Setting")
-Mul = input(title='ATR Mul', defval=2.3,group = "Strategy Setting")
+//=============================================================================//
+//                        ⚙️ STRATEGY & BACKTEST SETTINGS
+//=============================================================================//
+Buysig = input(defval=false, title='Start Strategy', group = "Strategy Settings")
+UseSl = input(defval=false, title='Use Stop Loss', group = "Strategy Settings")
+Compound = input(defval = true ,title =  "Compound Profit(กำไรทบต้น)", group = "Strategy Settings")
+Risk_Per_Trade = input(5, '% of Risk Per Trade', group = "Strategy Settings") / 100
+slType = input.string(title = "Stop Loss Type", defval = "Trailing", options = ["Low", "Trailing", "SD", "Lower Band"], display = display.data_window, group = "Strategy Settings")
+SLDAY = input.int(title='Bars Previous Calculate SL', defval=10, group = "Strategy Settings")
+mul = input.float(title='Multiple For Calculate SL', defval=2.3, group = "Strategy Settings")
 
-Compound = true
-use_date_range = input(true,title =  "Use Date Range",group = "BackTest Setting")
-
-
-//BUY
-float buyLine = na
-buyLine := ta.highest(src,Period)[1] 
-
-//SELL
-
-output = maType=="EMA" ?ta.ema(close, PeriodEMA) :ta.sma(close, PeriodEMA)
-show = request.security(syminfo.tickerid, xtf, output)
-FastL = plot(showema ? show : na, color=color.new(color.white, 0), linewidth=2, title='Slow EMA')
-
-//Buy-Sell Signal
-Green =  ta.crossover(close,buyLine) 
-Red = ta.crossunder(close,show)
-
-buycond = Green and Green[1] == 0
-sellcond = Red and Red[1] == 0
-
-bullish = ta.barssince(buycond) < ta.barssince(sellcond)
-bearish = ta.barssince(sellcond) < ta.barssince(buycond)
-
-buy = bearish[1] and buycond
-sell = bullish[1] and sellcond
-
-plot(showema ? buyLine : na, linewidth=1, style=plot.style_linebr, color= bullish ? color.new(color.green, 0):color.new(color.red, 0))
-plotshape(MarkBuySig ? buy : na, style=shape.labelup, text='Buy Next Bar', textcolor=color.new(color.black, 0), location=location.belowbar, color=color.new(color.green, 0))
-plotshape(MarkBuySig ? sell : na, style=shape.labeldown, text='Sell Next Bar', textcolor=color.new(color.black, 0), location=location.abovebar, color=color.new(color.red, 0))
-bgcolor(showbg ? bullish ? color.new(color.green,90) : color.new(color.red,90) : na )
-
-
-// === BACKTEST RANGE === //
-FromYear = input.int(defval=2000, title='From Year', minval=1950,group = "BackTest Setting")
-FromMonth = input.int(defval=1, title='From Month', minval=1,group = "BackTest Setting")
-FromDay = input.int(defval=1, title='From Day', minval=1,group = "BackTest Setting")
-ToYear = input.int(defval=9999, title='To Year', minval=1950,group = "BackTest Setting")
-ToMonth = input.int(defval=1, title='To Month', minval=1,group = "BackTest Setting")
-ToDay = input.int(defval=1, title='To Day', minval=1,group = "BackTest Setting")
+use_date_range = input(defval = true ,title = "Use Date Range", group = "Backtest Settings")
+FromYear  = input.int(defval=2000, title='From Year', minval=1950, group = "Backtest Settings")
+FromMonth = input.int(defval=1, title='From Month', minval=1, group = "Backtest Settings")
+FromDay   = input.int(defval=1, title='From Day', minval=1, group = "Backtest Settings")
+ToYear    = input.int(defval=9999, title='To Year', minval=1950, group = "Backtest Settings")
+ToMonth   = input.int(defval=1, title='To Month', minval=1, group = "Backtest Settings")
+ToDay     = input.int(defval=1, title='To Day', minval=1, group = "Backtest Settings")
 in_date_range = use_date_range ? time > timestamp(FromYear, FromMonth, FromDay, 00, 00) and time < timestamp(ToYear, ToMonth, ToDay, 23, 59) : true
 
-//****************************************************************************//
+//=============================================================================//
+//                        🧮 INDICATOR CALCULATIONS
+//=============================================================================//
+source = close
+basis = maType =="EMA" ? ta.ema(source, length) : ta.sma(source,length)
+basisSrc = request.security(syminfo.tickerid, xtf, basis)
+dev = mult * ta.stdev(source, length)
+devSRC = request.security(syminfo.tickerid, xtf, dev)
+upper = basisSrc + devSRC
+lower = basisSrc - devSRC
 
-//////////////////////////////////////////////
-//    define strategy entry / exit          //
-//////////////////////////////////////////////
+buyEntry = ta.crossover(close,upper)
+sellEntry = ta.crossunder(close,lower)
 
-//****************************************************************************//
-// LONG CONDITIONS
+buyCond = buyEntry and buyEntry[1] == 0
+sellCond = sellEntry and sellEntry[1] == 0
 
-Select_Long_Condition_1 = Green // Buy when Have Signal
+bullish = ta.barssince(buyCond) < ta.barssince(sellCond)
+bearish  = ta.barssince(buyCond) > ta.barssince(sellCond)
+
+buy = bearish[1] and buyCond 
+sell = bullish[1] and sellCond 
+
+plot(basis, "Basis", color= bullish ? color.green : color.red )
+upperLine = plot(upper, "Upper", color=#2962FF)
+lowerLine = plot(lower, "Lower", color=#2962FF)
+fill(upperLine, lowerLine,color =  color.new(color.white,95))
+plotshape(isShowSig ? buy : na, style=shape.labelup, text='Buy Next Bar', textcolor=color.new(color.black, 0), location=location.belowbar, color=color.new(color.green, 0))
+plotshape(isShowSig ? sell : na, style=shape.labeldown, text='Sell Next Bar', textcolor=color.new(color.black, 0), location=location.abovebar, color=color.new(color.red, 0))
+//=============================================================================//
+//                        🚦 ENTRY & EXIT CONDITIONS
+//=============================================================================//
+Select_Long_Condition_1 = buy
 Open_Long_Condition = Select_Long_Condition_1 and strategy.opentrades == 0
+Exit_Long_Condition = sell
 
-//****************************************************************************//
-// STOP LOSS Price
+//=============================================================================//
+//                        🛑 STOPLOSS CALCULATION
+//=============================================================================//
+float atr = ta.atr(SLDAY)
+float stopATR = mul * atr
+float sd = ta.stdev(close, SLDAY)
+float stopSD = mul * sd
 
-ATR = ta.atr(SLDAY)
-Stop = Mul*ATR
+var float ATRTrailingStop = na
+if na(ATRTrailingStop)
+    ATRTrailingStop := close - stopATR
 
-var ATRTrailingStop = 0.0
-ATRTrailingStop := if close>ATRTrailingStop[1] and close[1]>ATRTrailingStop[1]
-    math.max(ATRTrailingStop[1], close-Stop)
-else if close<ATRTrailingStop[1] and close[1]<ATRTrailingStop[1]
-    math.min(ATRTrailingStop[1], close+Stop)
-else if close>ATRTrailingStop[1]
-    close-Stop 
+ATRTrailingStop := if close > ATRTrailingStop[1] and close[1] > ATRTrailingStop[1]
+    math.max(ATRTrailingStop[1], close - stopATR)
+else if close < ATRTrailingStop[1] and close[1] < ATRTrailingStop[1]
+    math.min(ATRTrailingStop[1], close + stopATR)
+else if close > ATRTrailingStop[1]
+    close - stopATR 
 else 
-    close+Stop
+    close + stopATR
 
+float SlSd = close - stopSD
+float SlLow = ta.lowest(low, SLDAY)
 
-SD = ta.stdev(src,SLDAY)
-sdtrail = SD*Mul
-SlSd = src - sdtrail
-
-SlAtr =  slType == "Trailing" ? math.min(ATRTrailingStop, close-Stop) : slType == "SD" ? SlSd :ta.lowest(SLDAY)
-
+float longBaseSL = slType == "Trailing" ? math.min(ATRTrailingStop, close - stopATR) : slType == "SD" ? SlSd : slType == "Low" ? SlLow : lower
 
 float longSL = na
-longSL := Open_Long_Condition ?  SlAtr : longSL[1]  
-// plot(longSL)
+longSL := Open_Long_Condition ? longBaseSL : longSL[1]
 
 
-//****************************************************************************//
-// Cal StopLoss
-
+//=============================================================================//
+//                        ⚖️ POSITION SIZING & MONEY MANAGEMENT
+//=============================================================================//
 Long_Entry_Price = close
 Diff_OPEN_to_SL = math.abs(Long_Entry_Price - longSL)
 
-// Exit CONDITIONS
+float rawPortSize = Compound ? strategy.netprofit + strategy.initial_capital : strategy.initial_capital
+float portSize = math.max(rawPortSize, 0)
+float LossAmoutUnit = portSize > 0 ? portSize * Risk_Per_Trade : 0
+float maxQtyAllowed = 1e12
+float PositionSize = portSize > 0 and Diff_OPEN_to_SL > 0 ? LossAmoutUnit / Diff_OPEN_to_SL : 0
+PositionSize := math.min(PositionSize, maxQtyAllowed)
 
-Exit_Long_Condition = Red // Sell when Have Signal
+//=============================================================================//
+//                        🚀 EXECUTION (ENTRY/EXIT)
+//=============================================================================//
+bool canTrade = portSize > 0 and PositionSize > 0 and in_date_range
+bool noPosition = strategy.position_size == 0
+bool hasLong = strategy.position_size > 0
 
-//****************************************************************************//
-// POSITION SIZE CAP
+if Buysig and Open_Long_Condition and canTrade and noPosition
+    strategy.entry(id = 'LONG', direction = strategy.long, qty = PositionSize)
 
-float portSize = Compound ? strategy.netprofit + strategy.initial_capital : strategy.initial_capital
-float LossAmoutUnit = portSize * Risk_Per_Trade //50
-float PercentSL = ( Diff_OPEN_to_SL / Long_Entry_Price ) * 100
-float PositionSize = LossAmoutUnit / Diff_OPEN_to_SL
+bool exitBySignal = Exit_Long_Condition
+bool exitBySL     = UseSl and low <= longSL
+bool exitByDate   = use_date_range and not in_date_range
 
-
-//****************************************************************************//
-// ENTRY/EXIT
-
-if Buysig
-    if Open_Long_Condition and in_date_range
-        strategy.entry('LONG', strategy.long, qty=PositionSize)
-
-
-if Exit_Long_Condition and in_date_range
+if hasLong and (exitBySignal or exitBySL or exitByDate)
     strategy.close('LONG')
 
-if close < longSL and UseSl
-    strategy.close('LONG')
+float longPlotSL = hasLong and UseSl and not na(longSL) and longSL > 0 ? longSL : na
+plot(longPlotSL, title = "Long Stop Loss", linewidth = 2, style = plot.style_linebr, color = color.new(color.red, 0))
 
-if use_date_range and not in_date_range
-    strategy.close('LONG')
-
-//****************************************************************************//
-// PLOT STOP LOSS
-
-longPlotSL = strategy.opentrades > 0 and strategy.position_size > 0 ? longSL : na
-// label.new(bar_index, high, text=str.tostring(longPlotSL),color=color.white, textcolor=color.black)
-plot(longPlotSL, title="", linewidth=2, style=plot.style_linebr, color=color.new(color.red, 0))
-
-
-
-//****************************************************************************//
 
